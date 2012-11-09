@@ -11,7 +11,14 @@ require 'thinking-sphinx'
 require 'ts-delayed-delta'
 require 'thinking_sphinx/deltas/delayed_delta'
 require 'thinking_sphinx/deltas/datetime_delta'
+require 'yaml'
 
+
+yamlstring = ''
+File.open("config/database.yml", "r") { |f|
+    yamlstring = f.read
+}
+db = YAML::load(yamlstring)
 
 set :port,3000 
 
@@ -22,18 +29,17 @@ use Rack::Cache do
 end
 
 # switch ip to internal ec2 ip address
-ThinkingSphinx::Configuration.instance.address  = '127.0.0.1'
+ThinkingSphinx::Configuration.instance.address  = '10.211.166.145'
 ActiveRecord::Base.establish_connection(
-  'host'     => 'localhost',
+  'host'     => db['host'],
   'adapter'  => 'postgresql',
   'encoding' => 'unicode',
-  'database' => 'picbounce_development',
-  'pool'     => 5,
+  'database' => db['database'],
+  'pool'     => 100,
   'prepared_statements' => false,
-  'username' => 'newuser',
-  # 'password' => '',
-  # 'port'     => '',
-  
+  'username' => db['username'],
+  'password' => db['password'],
+  'port'     => db['port']
 )
 
 ActiveSupport.on_load :active_record do
@@ -61,12 +67,20 @@ get '/all' do
   '</ul>'
 end
 
+get '/healthcheck' do
+  response["Cache-Control"] = "max-age=0, public"
+  'health ok' +
+  '<ul>' + 
+  Post.search.collect { |a| "<li>#{a.text}</li>" }.join('') +
+  '</ul>'
+end
+
 get '/test' do
   ThinkingSphinx::Configuration.instance.address 
 end
 
 get '/search/:hashtag' do
-  response["Cache-Control"] = "max-age=300, public"
+  response["Cache-Control"] = "max-age=0, public"
   params[:hashtag] +
   '<ul>' + 
   Post.search(params[:hashtag]).collect { |a| "<li>#{a.text}</li>" }.join('') +

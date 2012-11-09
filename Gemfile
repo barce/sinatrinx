@@ -1,6 +1,8 @@
 source 'https://rubygems.org'
 gem 'sinatra'
+gem 'thin'
 gem 'pg'
+gem 'rack-cache'
 gem 'activesupport'
 gem 'thinking-sphinx'
 gem 'ts-delayed-delta', '1.1.3', :require => 'thinking_sphinx/deltas/delayed_delta' 
