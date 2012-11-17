@@ -28,8 +28,25 @@ use Rack::Cache do
  set :entitystore, "file:/var/cache/rack/body"
 end
 
+
+helpers do
+
+  def protected!
+    unless authorized?
+      response['WWW-Authenticate'] = %(Basic realm="Restricted Area")
+      throw(:halt, [401, "Not authorized\n"])
+    end
+  end
+
+  def authorized?
+    @auth ||=  Rack::Auth::Basic::Request.new(request.env)
+    @auth.provided? && @auth.basic? && @auth.credentials && @auth.credentials == ['admin', '456b7016a916a4b178dd72b947c152b7']
+  end
+
+end
+
 # switch ip to internal ec2 ip address
-ThinkingSphinx::Configuration.instance.address  = '10.211.166.145'
+ThinkingSphinx::Configuration.instance.address  = "#{db['sphinx']}"
 ActiveRecord::Base.establish_connection(
   'host'     => db['host'],
   'adapter'  => 'postgresql',
@@ -48,6 +65,24 @@ end
 
 def clear_connections
   ActiveRecord::Base.clear_active_connections!
+end
+
+def pretty_time(hours)
+  Time.now + (3600 * hours)
+end
+
+def get_stats
+
+  a          = pretty_time(-1).to_s.split(/\s+/)
+  start_time = a[0] + 'T' + a[1]
+  a          = pretty_time(0).to_s.split(/\s+/)
+  end_time   = a[0] + 'T' + a[1]
+
+  staging="---------[staging]---------\n" +`#{ENV['HOME']}/CloudWatch/bin/mon-get-stats IndexTimeCheck --start-time #{start_time} --end-time #{end_time} --period 60 --statistics "Average" --namespace "AWS:Sphinx" --dimensions "InstanceId=#{ENV['STAGING_INSTANCE_ID']}"  -I #{ENV['AWS_ACCESS_KEY']} -S #{ENV['AWS_SECRET_KEY']}`
+  prod="---------[production]---------\n" + `#{ENV['HOME']}/CloudWatch/bin/mon-get-stats IndexTimeCheck --start-time #{start_time} --end-time #{end_time} --period 60 --statistics "Average" --namespace "AWS:Sphinx" --dimensions "InstanceId=#{ENV['INSTANCE_ID']}" -I #{ENV['AWS_ACCESS_KEY']} -S #{ENV['AWS_SECRET_KEY']}`
+
+  all = staging + "\n\n" + prod
+  all
 end
 
 class Post < ActiveRecord::Base
@@ -69,7 +104,7 @@ end
 
 get '/healthcheck' do
   response["Cache-Control"] = "max-age=0, public"
-  'health ok' +
+  "health ok\n" +
   '<ul>' + 
   Post.search.collect { |a| "<li>#{a.text}</li>" }.join('') +
   '</ul>'
@@ -85,4 +120,12 @@ get '/search/:hashtag' do
   '<ul>' + 
   Post.search(params[:hashtag]).collect { |a| "<li>#{a.text}</li>" }.join('') +
   '</ul>' + '<!-- ' + clear_connections.inspect + ' -->'
+end
+
+get '/serverstats' do
+  protected!
+  response["Cache-Control"] = "max-age=600, public"
+  '<pre>' +
+  get_stats +
+  '</pre>'
 end
